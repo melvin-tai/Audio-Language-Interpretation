@@ -1,0 +1,183 @@
+/* Live Interpreter — clean white theme, phone-first, large touch targets. */
+:root {
+  --bg: #ffffff;
+  --text: #1f2328;
+  --muted: #5f6672;
+  --line: #e3e6ea;
+  --soft: #f5f7f9;
+  --blue: #1a66d6;
+  --blue-dark: #1452ad;
+  --red: #d33a2c;
+  --amber: #8a5a00;
+  --radius: 14px;
+  color-scheme: light;
+}
+
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 17px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans", "Helvetica Neue", Arial, sans-serif;
+}
+/* Pick the right font for each script (Japanese vs Chinese glyphs differ). */
+:lang(ja) { font-family: "Hiragino Sans", "Yu Gothic UI", "Noto Sans JP", "Noto Sans CJK JP", system-ui, sans-serif; }
+:lang(zh) { font-family: "PingFang SC", "Microsoft YaHei", "Noto Sans SC", "Noto Sans CJK SC", system-ui, sans-serif; }
+
+main, .notice {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: max(20px, env(safe-area-inset-top)) 18px max(32px, env(safe-area-inset-bottom));
+}
+[hidden] { display: none !important; }
+.visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+header { text-align: center; margin-bottom: 22px; }
+h1 { font-size: 1.6rem; line-height: 1.2; margin: 8px 0 4px; letter-spacing: -0.01em; }
+.tagline { margin: 0; color: var(--muted); }
+
+/* ---------- language pickers ---------- */
+.languages {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: end;
+  gap: 10px;
+}
+.lang { display: block; min-width: 0; }
+.lang span, .field span { display: block; font-size: .9rem; font-weight: 600; color: var(--muted); margin-bottom: 6px; }
+select {
+  width: 100%;
+  min-height: 50px;
+  padding: 10px 36px 10px 14px;
+  font: inherit;
+  font-size: 1rem; /* ≥16px stops iPhones zooming in when tapped */
+  color: var(--text);
+  background: var(--bg) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='m6 9 6 6 6-6' fill='none' stroke='%235f6672' stroke-width='2' stroke-linecap='round'/%3E%3C/svg%3E") no-repeat right 12px center / 18px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  appearance: none;
+  -webkit-appearance: none;
+  text-overflow: ellipsis;
+}
+select:disabled { background-color: var(--soft); color: var(--muted); }
+.swap {
+  width: 50px; height: 50px;
+  display: grid; place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  background: var(--bg);
+  color: var(--muted);
+  cursor: pointer;
+}
+.swap:hover:not(:disabled) { color: var(--blue); border-color: var(--blue); }
+.swap:disabled { opacity: .5; cursor: default; }
+
+/* On narrow phones, stack the pickers with the swap button between them. */
+@media (max-width: 480px) {
+  .languages { grid-template-columns: 1fr; gap: 6px; }
+  .swap { justify-self: center; width: 44px; height: 44px; }
+  .swap svg { transform: rotate(90deg); }
+}
+
+/* ---------- the big microphone button ---------- */
+.controls { text-align: center; margin: 28px 0 8px; }
+.mic {
+  position: relative;
+  width: 96px; height: 96px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--blue);
+  color: #fff;
+  display: inline-grid; place-items: center;
+  cursor: pointer;
+  box-shadow: 0 6px 18px rgba(26, 102, 214, .28);
+  transition: background .15s, transform .1s;
+  -webkit-tap-highlight-color: transparent;
+}
+.mic:hover { background: var(--blue-dark); }
+.mic:active { transform: scale(.96); }
+.mic:disabled { cursor: progress; opacity: .85; }
+.mic .icon-stop { display: none; }
+.mic[aria-pressed="true"] { background: var(--red); box-shadow: 0 6px 18px rgba(211, 58, 44, .3); }
+.mic[aria-pressed="true"] .icon-mic { display: none; }
+.mic[aria-pressed="true"] .icon-stop { display: block; }
+.mic[aria-pressed="true"]::after {           /* gentle "I'm listening" ring */
+  content: "";
+  position: absolute; inset: -8px;
+  border-radius: 50%;
+  border: 3px solid rgba(211, 58, 44, .35);
+  animation: ring 1.6s ease-out infinite;
+}
+@keyframes ring { from { transform: scale(.92); opacity: 1; } to { transform: scale(1.18); opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .mic[aria-pressed="true"]::after { animation: none; } }
+
+.mic-label { margin: 12px 0 0; font-weight: 600; }
+.status { min-height: 1.5em; margin: 6px auto 0; max-width: 34em; color: var(--muted); font-size: .95rem; }
+.status.warn { color: var(--amber); }
+.status.error { color: var(--red); font-weight: 600; }
+
+/* ---------- results ---------- */
+.results { margin-top: 22px; }
+.toolbar { display: flex; justify-content: flex-end; gap: 4px; margin-bottom: 6px; }
+.text-button {
+  min-height: 44px;
+  padding: 8px 12px;
+  border: 0;
+  background: none;
+  color: var(--blue);
+  font: inherit;
+  font-weight: 600;
+  border-radius: 10px;
+  cursor: pointer;
+}
+.text-button:hover { background: var(--soft); }
+
+.live {
+  margin: 0 0 10px;
+  padding: 14px 16px;
+  border: 1px dashed var(--line);
+  border-radius: var(--radius);
+  color: var(--muted);
+  font-style: italic;
+}
+.phrases { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.phrase {
+  padding: 14px 16px;
+  background: var(--soft);
+  border-radius: var(--radius);
+}
+.phrase .original { margin: 0 0 4px; color: var(--muted); font-size: .95rem; }
+.phrase .translated { margin: 0; font-size: 1.2rem; line-height: 1.45; font-weight: 500; }
+.phrase .translated.pending, .phrase .translated.failed { color: var(--muted); font-size: 1rem; font-weight: 400; font-style: italic; }
+.empty { margin: 8px 0 0; text-align: center; color: var(--muted); }
+
+/* ---------- settings & footer ---------- */
+.settings {
+  margin-top: 36px;
+  border-top: 1px solid var(--line);
+  padding-top: 8px;
+}
+.settings summary {
+  min-height: 44px;
+  display: flex; align-items: center;
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--muted);
+}
+.settings summary::-webkit-details-marker { display: none; }
+.settings summary::after { content: ""; width: 8px; height: 8px; margin-left: 10px; border: solid currentColor; border-width: 0 2px 2px 0; transform: rotate(45deg) translateY(-3px); transition: transform .15s; }
+.settings[open] summary::after { transform: rotate(-135deg) translateY(-1px); }
+.field { display: block; margin-top: 14px; }
+.support { margin: 18px 0 0; padding: 0; list-style: none; color: var(--muted); font-size: .9rem; }
+.support li { margin: 4px 0; }
+footer { margin-top: 28px; color: var(--muted); font-size: .85rem; }
+footer p { margin: 0; }
+
+button:focus-visible, select:focus-visible, summary:focus-visible {
+  outline: 3px solid rgba(26, 102, 214, .45);
+  outline-offset: 2px;
+}
+
+.notice { text-align: left; }
+.notice h1 { margin-top: 24px; }
