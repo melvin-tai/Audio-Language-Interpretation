@@ -1,7 +1,7 @@
 {
   "name": "live-interpreter",
   "version": "1.0.0",
-  "description": "Browser-based live speech transcription and translation for English, French, German, Mandarin, Japanese and Indonesian. Static site \u2014 hostable on GitHub Pages.",
+  "description": "Browser-based live speech transcription and translation for English, French, German, Mandarin, Japanese and Indonesian. Static site — hostable on GitHub Pages.",
   "private": true,
   "type": "module",
   "license": "MIT",
@@ -11,7 +11,7 @@
   "scripts": {
     "start": "node serve.mjs",
     "test": "node --test \"tests/unit/*.test.mjs\"",
-    "test:e2e": "node --test \"tests/e2e/*.test.mjs\"",
+    "test:e2e": "node tests/e2e/smoke.test.mjs",
     "check": "node check-syntax.mjs"
   },
   "devDependencies": {

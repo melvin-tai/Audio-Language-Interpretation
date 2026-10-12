@@ -12,7 +12,7 @@
  *   - the AI worker (no 77 MB Whisper download) — replaced by a mock that
  *     reports the duration of each audio segment it receives;
  *   - the MyMemory HTTP API — answered by request interception.
- * The real Whisper code path is the same; only the model call is faked.
+ * The real Whisper/NLLB code paths are the same; only the model call is faked.
  *
  * Optional env: PUPPETEER_EXECUTABLE_PATH to use an existing Chrome/Chromium.
  */
@@ -221,7 +221,7 @@ test('layout: even spacing and a reachable button on every screen size', { timeo
     assert.ok(m.overlap > 20, `${at}: panel should ride over the header wave`);
     assert.ok(m.micBottom <= height, `${at}: microphone button is below the screen (${m.micBottom}px)`);
     assert.ok(m.logoW >= 120, `${at}: logo too small (${m.logoW}px)`);
-    assert.equal(m.heroBg, 'rgb(0, 0, 0)', `${at}: header must be pure black to match the logo artwork's own background`);
+    assert.equal(m.heroBg, 'rgb(8, 50, 61)', `${at}: header must be deep-sea so the white logo shows`);
     await page.close();
   }
 });

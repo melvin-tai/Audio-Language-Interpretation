@@ -1,7 +1,8 @@
 /**
  * ml-client.js — tiny promise-based RPC wrapper around ml.worker.js.
  *
- * One shared worker serves every recording, so a model loaded once is reused.
+ * One shared worker serves both Whisper and NLLB, so a model loaded for one
+ * recording is reused by the next.
  */
 let worker = null;
 let nextId = 1;
@@ -48,13 +49,15 @@ export function onModelProgress(fn) {
 
 /** Turn a transformers.js progress event into a short, plain-language message (or null). */
 export function describeProgress({ op, info }) {
-  const what = op === 'translate' ? 'translation' : 'speech recognition';
+  const what = op === 'translate' ? 'offline translator' : 'speech recognition';
   // transformers.js v4 emits an aggregate 'progress_total' event across all model files.
   if (info.status === 'progress_total' && info.total) {
     const mb = (b) => Math.round(b / 1e6);
     return `Getting ${what} ready — one-time download: ${mb(info.loaded)} of ${mb(info.total)} MB`;
   }
   if (info.status === 'initiate' || info.status === 'download') return `Getting ${what} ready…`;
-  if (info.status === 'ready' && op !== 'translate') return 'Listening… pause briefly after each sentence.';
+  if (info.status === 'ready') {
+    return op === 'translate' ? 'Offline translator is ready.' : 'Listening… pause briefly after each sentence.';
+  }
   return null;
 }

@@ -10,8 +10,9 @@ import { describeProgress } from '../../../app/js/workers/ml-client.js';
 test('config: exactly the six required languages, each with every engine code', () => {
   assert.deepEqual(LANGUAGES.map((l) => l.id).sort(), ['de', 'en', 'fr', 'id', 'ja', 'zh']);
   for (const l of LANGUAGES) {
-    for (const k of ['name', 'native', 'whisper', 'translator', 'mymemory']) assert.ok(l[k], `${l.id}.${k}`);
+    for (const k of ['name', 'native', 'whisper', 'translator', 'mymemory', 'nllb']) assert.ok(l[k], `${l.id}.${k}`);
     assert.ok(Array.isArray(l.speech) && l.speech.length, `${l.id}.speech`);
+    assert.match(l.nllb, /^[a-z]{3}_[A-Z][a-z]{3}$/, `${l.id}.nllb is a FLORES-200 code`);
   }
   assert.throws(() => getLanguage('xx'), /Unknown language/);
   assert.equal(getLanguage('zh').speech[0], 'cmn-Hans-CN');
@@ -25,8 +26,8 @@ test('settings: defaults, saved values, then URL overrides — invalid values ig
   assert.deepEqual(loadSettings({ search: '', storage }), { ...DEFAULT_SETTINGS });
   saveSettings({ ...DEFAULT_SETTINGS, source: 'ja', target: 'en' }, storage);
   assert.equal(loadSettings({ search: '', storage }).source, 'ja');
-  const s = loadSettings({ search: '?from=de&to=id&asr=whisper&model=small&mt=mymemory&evil=1', storage });
-  assert.deepEqual(s, { source: 'de', target: 'id', recognition: 'whisper', whisperModel: 'small', translation: 'mymemory' });
+  const s = loadSettings({ search: '?from=de&to=id&asr=whisper&model=small&mt=nllb&evil=1', storage });
+  assert.deepEqual(s, { source: 'de', target: 'id', recognition: 'whisper', whisperModel: 'small', translation: 'nllb' });
   assert.deepEqual(fromQuery('?from=klingon&asr=magic'), {});
   assert.deepEqual(sanitize({ whisperModel: '__proto__' }), {});
   assert.ok(Object.keys(WHISPER_MODELS).includes(DEFAULT_SETTINGS.whisperModel));
@@ -34,10 +35,10 @@ test('settings: defaults, saved values, then URL overrides — invalid values ig
 
 test('settings: only the two languages are remembered between visits', () => {
   const storage = memoryStorage();
-  saveSettings({ ...DEFAULT_SETTINGS, source: 'zh', target: 'id', recognition: 'whisper', translation: 'mymemory' }, storage);
+  saveSettings({ ...DEFAULT_SETTINGS, source: 'zh', target: 'id', recognition: 'whisper', translation: 'nllb' }, storage);
   assert.deepEqual(JSON.parse(storage.getItem('live-interpreter:settings')), { source: 'zh', target: 'id' });
   // Engine choices saved by an older version of the page are ignored too.
-  storage.setItem('live-interpreter:settings', JSON.stringify({ source: 'fr', recognition: 'whisper', translation: 'mymemory' }));
+  storage.setItem('live-interpreter:settings', JSON.stringify({ source: 'fr', recognition: 'whisper', translation: 'nllb' }));
   assert.deepEqual(loadSettings({ search: '', storage }), { ...DEFAULT_SETTINGS, source: 'fr' });
   // …but a URL can still choose engines for that visit (advanced use).
   assert.equal(loadSettings({ search: '?asr=whisper', storage }).recognition, 'whisper');
@@ -64,7 +65,7 @@ test('hallucination filter catches subtitle credits but keeps real speech', () =
 test('describeProgress gives plain-language download messages', () => {
   const msg = describeProgress({ op: 'transcribe', model: 'onnx-community/whisper-base', info: { status: 'progress_total', progress: 42.7, loaded: 32_000_000, total: 77_000_000 } });
   assert.equal(msg, 'Getting speech recognition ready — one-time download: 32 of 77 MB');
-  assert.equal(describeProgress({ op: 'transcribe', model: 'a/b', info: { status: 'initiate' } }), 'Getting speech recognition ready…');
+  assert.match(describeProgress({ op: 'translate', model: 'x/nllb', info: { status: 'initiate' } }), /offline translator/);
   assert.equal(describeProgress({ op: 'transcribe', model: 'a/b', info: { status: 'done' } }), null);
 });
 

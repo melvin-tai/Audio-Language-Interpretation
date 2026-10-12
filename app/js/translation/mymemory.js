@@ -6,7 +6,7 @@
  * config.js). Quality is variable: MyMemory is a *translation memory*, so for
  * very common short phrases it sometimes returns a poor crowd-sourced match.
  */
-import { MYMEMORY, ONLINE_TIMEOUT_MS } from '../config.js';
+import { MYMEMORY } from '../config.js';
 
 const utf8Bytes = (s) => new TextEncoder().encode(s).length;
 
@@ -65,18 +65,10 @@ export const myMemoryTranslator = {
   id: 'mymemory',
   label: 'MyMemory online translator',
   isSupported: () => typeof fetch === 'function',
-  availability: () => 'needs-network',
   async translate(text, src, tgt, _onStatus, { fetchFn = globalThis.fetch } = {}) {
     const out = [];
     for (const piece of splitByBytes(text, MYMEMORY.maxQueryBytes)) {
-      // Give up quickly on a bad connection rather than leaving the person waiting.
-      const signal = typeof AbortSignal?.timeout === 'function' ? AbortSignal.timeout(ONLINE_TIMEOUT_MS) : undefined;
-      let res;
-      try {
-        res = await fetchFn(buildMyMemoryUrl(piece, src.mymemory, tgt.mymemory), { signal });
-      } catch (err) {
-        throw new Error(err?.name === 'TimeoutError' ? 'the online translator took too long (slow connection)' : `network error (${err?.message || err})`);
-      }
+      const res = await fetchFn(buildMyMemoryUrl(piece, src.mymemory, tgt.mymemory));
       if (!res.ok) throw new Error(`network error ${res.status}`);
       out.push(parseMyMemoryResponse(await res.json()));
     }
