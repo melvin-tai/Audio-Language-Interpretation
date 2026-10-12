@@ -100,13 +100,81 @@ const engine = (id, availability, out = id) => ({
   async translate() { this.calls++; if (out instanceof Error) throw out; return out; },
 });
 
-test('router: anything that works offline is tried before the network', async () => {
-  const chrome = engine('chrome', 'needs-network');
-  const onDevice = engine('on-device', 'ready');
-  const mm = engine('mymemory', 'needs-network');
-  const r = new TranslationRouter({ engines: [chrome, onDevice, mm], isOnline: () => true });
+// Engines that answer after a delay, for the online-vs-on-device race.
+const timed = (id, availability, ms, out = `${id}-result`) => ({
+  id, label: id, calls: 0, isSupported: () => true,
+  availability: async () => availability,
+  async translate() {
+    this.calls++;
+    await new Promise((r) => setTimeout(r, ms));
+    if (out instanceof Error) throw out;
+    return out;
+  },
+});
+const FAST_RACE = { defaultLocalMs: 60, minHeadStartMs: 20, maxHeadStartMs: 200, slowStreakLimit: 2, cooldownMs: 10_000, smoothing: 0.3 };
+
+test('race: a quick online answer is used, and on-device never starts', async () => {
+  const online = timed('mymemory', 'needs-network', 5);
+  const local = timed('on-device', 'ready', 5);
+  const r = new TranslationRouter({ engines: [local, online], isOnline: () => true, race: FAST_RACE });
+  assert.deepEqual(await r.translate('x', L('en'), L('id')), { text: 'mymemory-result', engine: 'mymemory' });
+  await new Promise((res) => setTimeout(res, 100));
+  assert.equal(local.calls, 0, 'on-device was not needed');
+});
+
+test('race: when online is slower than on-device would be, on-device wins', async () => {
+  const online = timed('mymemory', 'needs-network', 400);
+  const local = timed('on-device', 'ready', 30);
+  const r = new TranslationRouter({ engines: [local, online], isOnline: () => true, race: FAST_RACE });
+  const t0 = Date.now();
   assert.equal((await r.translate('x', L('en'), L('id'))).engine, 'on-device');
-  assert.equal(chrome.calls + mm.calls, 0, 'no network call when a downloaded engine works');
+  const took = Date.now() - t0;
+  assert.ok(took < 200, `answered in ${took} ms instead of waiting ~400 ms for online`);
+  assert.ok(r.localMs !== null && r.localMs >= 25, 'on-device time was measured');
+});
+
+test('race: if online fails, on-device starts at once (no waiting for the head start)', async () => {
+  const online = timed('mymemory', 'needs-network', 1, new Error('network error'));
+  const local = timed('on-device', 'ready', 10);
+  const r = new TranslationRouter({ engines: [local, online], isOnline: () => true, race: { ...FAST_RACE, minHeadStartMs: 500, maxHeadStartMs: 500, defaultLocalMs: 500 } });
+  const t0 = Date.now();
+  assert.equal((await r.translate('x', L('en'), L('id'))).engine, 'on-device');
+  assert.ok(Date.now() - t0 < 200);
+});
+
+test('race: after online loses twice, on-device goes first for a while, then online is tried again', async () => {
+  let clock = 1_000_000;
+  const statuses = [];
+  const online = timed('mymemory', 'needs-network', 300);
+  const local = timed('on-device', 'ready', 10);
+  const r = new TranslationRouter({ engines: [local, online], isOnline: () => true, race: FAST_RACE, now: () => clock, onStatus: (m) => statuses.push(m) });
+  await r.translate('a', L('en'), L('id'));
+  await r.translate('b', L('en'), L('id'));
+  assert.equal(online.calls, 2);
+  assert.match(statuses.at(-1), /connection is slow/);
+  await r.translate('c', L('en'), L('id'));
+  assert.equal(online.calls, 2, 'during the cool-down, online is not asked');
+  clock += FAST_RACE.cooldownMs + 1;
+  await r.translate('d', L('en'), L('id'));
+  assert.equal(online.calls, 3, 'after the cool-down, online gets another chance');
+});
+
+test('race: online only when the pair is not downloaded; on-device only when offline', async () => {
+  const online = timed('mymemory', 'needs-network', 5);
+  const notDownloaded = timed('on-device', 'unavailable', 5);
+  const r1 = new TranslationRouter({ engines: [notDownloaded, online], isOnline: () => true, race: FAST_RACE });
+  assert.equal((await r1.translate('x', L('en'), L('id'))).engine, 'mymemory');
+  const local = timed('on-device', 'ready', 5);
+  const r2 = new TranslationRouter({ engines: [local, timed('mymemory', 'needs-network', 5)], isOnline: () => false, race: FAST_RACE });
+  assert.equal((await r2.translate('x', L('en'), L('id'))).engine, 'on-device');
+});
+
+test('race: if both fail, the person gets one combined error', async () => {
+  const r = new TranslationRouter({
+    engines: [timed('on-device', 'ready', 5, new Error('out of memory')), timed('mymemory', 'needs-network', 5, new Error('quota'))],
+    isOnline: () => true, race: FAST_RACE,
+  });
+  await assert.rejects(r.translate('x', L('en'), L('id')), /quota.*out of memory|out of memory.*quota/);
 });
 
 test('router: offline it only uses downloaded engines, and explains when there are none', async () => {

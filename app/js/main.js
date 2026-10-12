@@ -11,6 +11,10 @@ import { onModelProgress, describeProgress } from './workers/ml-client.js';
 import { isPhoneOrTablet, createWakeLock } from './device.js';
 import { offlinePacks } from './offline/packs.js';
 
+// Reaching this line means every module loaded: tell index.html's self-repair check.
+document.documentElement.dataset.started = 'true';
+try { sessionStorage.removeItem('live-interpreter:repaired'); } catch { /* storage blocked */ }
+
 const $ = (id) => document.getElementById(id);
 const el = {
   source: $('source'), target: $('target'), swap: $('swap'),
@@ -140,7 +144,7 @@ async function updateOffline() {
   if (ready) {
     showOffline('ready', `✓ ${pairName()} works without internet on this device.`);
   } else if (isOnline()) {
-    showOffline('missing', `Poor connection? Download once and ${pairName()} works without internet.`, `Download for offline use · ${missingMb} MB`);
+    showOffline('missing', `Slow or no internet? Download once and ${pairName()} keeps working without it.`, `Download for offline use · ${missingMb} MB`);
   } else {
     showOffline('offline', `You’re offline, and ${pairName()} isn’t downloaded on this device yet. Connect once to download it.`);
   }
@@ -184,10 +188,7 @@ window.addEventListener('online', updateOffline);
 window.addEventListener('offline', updateOffline);
 updateOffline();
 
-// Keep the app itself on the device so it opens without internet.
-if ('serviceWorker' in navigator && window.isSecureContext && location.protocol !== 'file:') {
-  navigator.serviceWorker.register('sw.js').catch((err) => console.warn('Offline app storage unavailable:', err));
-}
+// The service worker is registered by index.html, so it works even if this script can't start.
 
 el.clear.addEventListener('click', () => {
   el.phrases.replaceChildren();

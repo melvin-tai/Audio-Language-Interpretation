@@ -18,17 +18,41 @@
   <link rel="apple-touch-icon" href="app/images/touch-icon.png">
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="preload" href="app/fonts/plus-jakarta-sans-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
-  <link rel="stylesheet" href="app/styles.css?v=2026-10-12c">
-  <script type="module" src="app/js/main.js?v=2026-10-12c"></script>
+  <link rel="stylesheet" href="app/styles.css?v=2026-10-12d">
+  <script type="module" src="app/js/main.js?v=2026-10-12d"></script>
   <script>
-    // Opened by double-clicking the file? Browsers block the microphone there,
-    // so explain what to do instead (this plain script runs even when the app can't).
-    if (location.protocol === 'file:') {
-      document.addEventListener('DOMContentLoaded', function () {
-        document.getElementById('file-warning').hidden = false;
-        document.getElementById('app').hidden = true;
+    // A plain script: it runs even if the app's own code can't start.
+    (function () {
+      // Opened by double-clicking the file? Browsers block the microphone there,
+      // so explain what to do instead.
+      if (location.protocol === 'file:') {
+        document.addEventListener('DOMContentLoaded', function () {
+          document.getElementById('file-warning').hidden = false;
+          document.getElementById('app').hidden = true;
+        });
+        return;
+      }
+      if (!('serviceWorker' in navigator) || !window.isSecureContext) return;
+
+      // Keep the app on this device (offline use, one consistent version).
+      navigator.serviceWorker.register('sw.js').catch(function (err) {
+        console.warn('Offline app storage unavailable:', err);
       });
-    }
+
+      // Self-repair: right after an update, the browser can mix the new page with
+      // old saved scripts, and the app fails to start. If that happens, reload once
+      // through the service worker, which always serves one complete version.
+      window.addEventListener('load', function () {
+        setTimeout(function () {
+          if (document.documentElement.dataset.started) return;
+          try {
+            if (sessionStorage.getItem('live-interpreter:repaired')) return;
+            sessionStorage.setItem('live-interpreter:repaired', '1');
+          } catch (e) { /* storage blocked: still try once */ }
+          navigator.serviceWorker.ready.then(function () { location.reload(); });
+        }, 1500);
+      });
+    })();
   </script>
 </head>
 <body>

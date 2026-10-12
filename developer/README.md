@@ -23,10 +23,10 @@ A server is required because browsers block ES modules, workers and `getUserMedi
 
 ```bash
 cd developer
-npm test           # 63 unit tests, Node ≥ 22.12, no install needed
+npm test           # 68 unit tests, Node ≥ 22.12, no install needed
 npm run check      # syntax-check every file in app/js
 npm install        # once: puppeteer + Chrome for the browser tests
-npm run test:e2e   # 5 headless-Chrome tests
+npm run test:e2e   # 6 headless-Chrome tests
 ```
 
 **Unit tests (`tests/unit/`)** cover:
@@ -34,13 +34,15 @@ npm run test:e2e   # 5 headless-Chrome tests
 - Built-in speech engine, against a fake `SpeechRecognition` that mimics phones: one phrase per session, sessions ending without a final result, language-code fallback, fatal errors and restart-loop detection.
 - Translation: MyMemory byte-limit chunking (including CJK), entity decoding and error/quota handling; router fallback and per-pair memory.
 - App logic: settings validation and per-device defaults; device detection; controller ordering, auto-fallback and plain-language errors.
-- Offline (`offline.test.mjs`): an on-device plan for all 30 directions; Japanese via M2M100; Simplified-Chinese prefix; **only reviewed, commercially licensed models** (fails if NLLB or `opus-mt-en-jap` appear); pack contents and sizes; offline-first routing, never touching the network offline, the 1.5 s availability limit and its 30 s memory; MyMemory timeout; download manager (only missing parts, monotonic progress, resume after interruption, cache-check fallback); speech engine choice; the service worker lists every app file and its `VERSION` matches both `?v=` tags in `index.html`.
+- Translation race (`offline.test.mjs`): quick online answers win without starting on-device; slow online loses to on-device; online failure starts on-device immediately; two losses switch to on-device-first for the cool-down, then online is retried; online-only / offline-only cases; combined error when both fail.
+- Offline (`offline.test.mjs`): an on-device plan for all 30 directions; Japanese via M2M100; Simplified-Chinese prefix; **only reviewed, commercially licensed models** (fails if NLLB or `opus-mt-en-jap` appear); pack contents and sizes; never touching the network while offline, the 1.5 s availability limit and its 30 s memory; MyMemory timeout; download manager (only missing parts, monotonic progress, resume after interruption, cache-check fallback); speech engine choice; the service worker lists every app file and its `VERSION` matches both `?v=` tags in `index.html`.
 
 **E2E tests (`tests/e2e/`)** run in real headless Chrome:
 1. **Desktop.** A synthetic two-phrase "speech" WAV goes through Chrome's fake microphone. The test checks the whole path: AudioWorklet → resampler → segmenter → worker → translation → cards.
 2. **Phone.** Uses an Android user agent at a 360 px viewport. It checks there is no sideways scrolling, the large button, that the page shows only the two language pickers (no technical settings), that the Quick model is used, and that recording works.
 3. **`file://`.** Opening the file directly shows the friendly explanation with a link to the live site.
 4. **Layout.** Even spacing and a reachable button at six screen sizes.
+6. **Update safety (`update.test.mjs`).** Serves an old version with GitHub-Pages-like caching (`max-age=600`), "deploys" the new one, presses Reload, and checks the app repairs itself and starts.
 5. **Offline (`offline.test.mjs`).** Loads the app, checks the service worker controls it and the page is `crossOriginIsolated`, downloads a pair, then **shuts the web server down** and goes offline: the app must reopen, show the pair as ready, and turn speech into a translated card with zero requests to any online service. A pair that wasn't downloaded must show the offline explanation.
 
 The AI worker and the MyMemory HTTP API are stubbed, so the tests are fast, offline and deterministic. Real model inference (download sizes, speed and translation quality on real phones), Chrome's Translator API and Web Speech need manual testing.
@@ -76,7 +78,7 @@ To host your **own copy**, fork the repository (or upload these files to a new p
 
 ## Architecture
 
-The app is **offline-first**: anything that runs on the device is preferred over anything that needs the network, so a slow or missing connection never blocks a language pair that has been downloaded.
+**Speech recognition is offline-first** (on-device Whisper whenever downloaded). **Translation is online-first with a fast on-device fallback**: online starts first, and on-device takes over as soon as online is slower than on-device would be. A slow or missing connection therefore never blocks a language pair that has been downloaded.
 
 ```mermaid
 flowchart LR
@@ -86,9 +88,9 @@ flowchart LR
     R -. live partial text .-> UI
     F --> Q[Ordered queue]
     Q --> T{Translation router}
-    T -- "ready offline: 1st" --> C[Chrome Translator, if pair installed]
-    T -- "ready offline: 2nd" --> O[On-device Opus-MT / M2M100]
-    T -- "online only" --> M[MyMemory, 8 s timeout]
+    T -- "online, starts first" --> M[MyMemory, 8 s timeout]
+    T -- "on-device, starts if online is slower or fails" --> C[Chrome Translator, if pair installed]
+    T -- "on-device" --> O[On-device Opus-MT / M2M100]
     C & O & M --> UI[Cards]
 ```
 
@@ -97,11 +99,17 @@ flowchart LR
 - **Speech engine choice** (`recognition/index.js`): Whisper whenever its model is downloaded; otherwise browser Web Speech if available *and online*; otherwise Whisper.
 - **Web Speech engine.** Desktop uses `continuous = true`. Phones use one phrase per session with auto-restart, because continuous mode accumulates or duplicates results on Android and iOS. Leftover interim text is promoted to final on `end`, since iOS often ends without a final result.
 - **Whisper engine.** mic → AudioWorklet → linear resampler (Firefox can't attach a mic to a 16 kHz `AudioContext`) → energy VAD segmenter → Web Worker. VAD: 30 ms frames, adaptive noise floor × 3, 700 ms pause ends a phrase, 15 s force-cut. A filter drops Whisper's known hallucinations such as subtitle credits.
-- **Translation router** (`translation/index.js`). Each engine reports `availability(src, tgt)` → `ready` (works offline now) / `needs-network` / `unavailable`. All engines are asked in parallel with a 1.5 s limit (some browsers never answer for Chrome's Translator), answers are remembered for 30 s and pre-computed when Record is pressed, so sentences never wait on the check. Order: ready engines, then — only if `navigator.onLine` — network engines. With nothing usable it throws `OfflineNotReadyError`, shown as a plain instruction. Permanent failures are remembered per engine and pair.
+- **Translation router** (`translation/index.js`). Each engine reports `availability(src, tgt)` → `ready` (on-device, works offline now) / `needs-network` / `unavailable`. All engines are asked in parallel with a 1.5 s limit (some browsers never answer for Chrome's Translator); answers are remembered for 30 s and pre-computed when Record is pressed, so sentences never wait on the check. Policy (`auto`):
+  - offline → on-device engines only; nothing usable → `OfflineNotReadyError`, shown as a plain instruction;
+  - online, pair not downloaded → online engines only;
+  - online and downloaded → **race with a head start** (`raceOnlineFirst`): online starts; on-device starts when online fails, or when online hasn't answered within the expected on-device time (running average of measured on-device translations, 1 s until measured, clamped 0.3–2 s) — i.e. when online is slower than on-device would be; the first translation wins;
+  - online losing twice in a row → on-device goes first for 2 minutes, then online is raced again. Tunables live in `RACE`.
+  Permanent failures are remembered per engine and pair.
 - **On-device translation** (`translation/on-device.js`, `translationPlan()` in `config.js`). Opus-MT (Marian, ~77M params, ~110 MB q8 each) for X↔English, pivoting through English for two non-English languages; M2M100 418M (~635 MB q8) for any language → Japanese, because no good small English→Japanese model exists (the Opus `en-jap` model's target language is unclear; `opus-tatoeba-en-ja` scores BLEU 15). `en→zh` is prefixed with `>>cmn_Hans<<` (Simplified). It never starts a download by itself in auto mode.
 - **Language packs** (`offline/packs.js`). One pack = Whisper + every translation model for both directions of a pair. `status()` asks the worker `isCached` (transformers.js `ModelRegistry.is_pipeline_cached`, `local_files_only` — cache only, never the network); if that can't answer within 5 s it falls back to a localStorage record of completed downloads. `download()` fetches only what's missing, one model at a time with the pipeline disposed afterwards (so a 935 MB Japanese pack doesn't sit in a phone's memory), reports byte progress, and calls `navigator.storage.persist()`.
 - **Worker** (`workers/ml.worker.js`). Imports the self-hosted transformers.js bundle (`app/vendor/`). q8 weights on the WASM backend. Keeps at most 2 translation pipelines in memory (LRU, disposed when evicted). transformers.js stores model files *and* the ONNX Runtime `.wasm` in Cache Storage (`transformers-cache`) and checks it before the network.
-- **Service worker** (`sw.js`). Pre-caches every app file under one versioned cache (`cache: 'reload'` so the stored set is consistent), serves them cache-first, and serves `index.html` for every navigation, so the app opens with no network. Cross-origin requests (models, CDN, MyMemory) are left alone — transformers.js caches models itself, so nothing is stored twice. It also adds `Cross-Origin-Opener-Policy: same-origin` + `Cross-Origin-Embedder-Policy: require-corp` to everything it serves: GitHub Pages can't send those headers, and they make the page `crossOriginIsolated`, which lets ONNX Runtime use multi-threaded WebAssembly. Measured in headless Chromium with the real ONNX Runtime on a plain server: isolated only after the service worker takes over, and 1.66× faster on a 2-core machine (more cores → larger gains, up to ORT's default of 4 threads).
+- **Service worker** (`sw.js`), registered by an inline script in `index.html` (so it works even if the app's modules fail to load). Pre-caches every app file under one versioned cache (`cache: 'reload'` so the stored set is consistent), serves them cache-first, and serves `index.html` for every navigation, so the app opens with no network. Updates wait until the app is closed (no `skipWaiting`), so an open page never mixes versions.
+- **Self-repair after updates.** Before the service worker controls a page (e.g. the first visit after upgrading from a version without one), a normal reload can combine a new `index.html` with old HTTP-cached modules; the module graph then fails to link and the app doesn't start. `main.js` marks `<html data-started>`; if that hasn't happened 1.5 s after load, the inline script waits for the service worker and reloads once (guarded by sessionStorage) — the page is then served from the consistent precache. Covered by `tests/e2e/update.test.mjs`, which fails without the repair. Cross-origin requests (models, CDN, MyMemory) are left alone — transformers.js caches models itself, so nothing is stored twice. It also adds `Cross-Origin-Opener-Policy: same-origin` + `Cross-Origin-Embedder-Policy: require-corp` to everything it serves: GitHub Pages can't send those headers, and they make the page `crossOriginIsolated`, which lets ONNX Runtime use multi-threaded WebAssembly. Measured in headless Chromium with the real ONNX Runtime on a plain server: isolated only after the service worker takes over, and 1.66× faster on a 2-core machine (more cores → larger gains, up to ORT's default of 4 threads).
 - **Phones.** Phones default to the Quick (tiny) Whisper model, keep the screen awake with the Screen Wake Lock API, and create the `AudioContext` before the first `await` so iOS treats it as user-initiated.
 
 ### File map

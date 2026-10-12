@@ -37,7 +37,9 @@ For places with a weak or no connection. Do this **once per language pair, on ea
 3. **iPhone/iPad:** add the page to your Home Screen (**Share → Add to Home Screen**) and open it from there from now on. Safari may clear downloads of websites that aren't used for 7 days; Home Screen apps are kept.
 4. Repeat for any other language pair you need.
 
-From then on the app opens and works with **no connection at all** — speech recognition and translation run on the device itself. Nothing you say leaves the phone.
+From then on the app opens and works with **no connection at all** — speech recognition and translation run on the device itself.
+
+**With internet, it still helps:** translation uses the online service first, but if that's slower than translating on the device would be, the on-device translator takes over for that sentence. If the connection stays slow, the app keeps translating on the device for a couple of minutes, then tries online again. You don't need to do anything.
 
 | Pair | One-time download (phone) | (computer) |
 |---|---|---|

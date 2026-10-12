@@ -6,7 +6,8 @@
  *    are always served from the device — instantly, even offline or on a very
  *    slow connection. A new version is fetched in the background only when
  *    this file changes (bump VERSION on every release; a unit test checks it
- *    matches the ?v= tag in index.html).
+ *    matches the ?v= tag in index.html). A new version waits until the app is
+ *    closed before taking over, so an open page never mixes two versions.
  *
  * 2. Speed. Every page and script we serve gets two headers (COOP + COEP) that
  *    make the page "cross-origin isolated". That unlocks multi-threaded
@@ -16,7 +17,7 @@
  * AI model files are NOT handled here: transformers.js stores those itself
  * (Cache Storage "transformers-cache"), so they're never stored twice.
  */
-const VERSION = '2026-10-12c';
+const VERSION = '2026-10-12d';
 const APP_CACHE = `app-${VERSION}`;
 
 const APP_FILES = [
@@ -59,7 +60,8 @@ self.addEventListener('install', (event) => {
     const cache = await caches.open(APP_CACHE);
     // cache: 'reload' skips the browser's HTTP cache, so one version is stored consistently.
     await cache.addAll(APP_FILES.map((url) => new Request(url, { cache: 'reload' })));
-    await self.skipWaiting();
+    // No skipWaiting(): an update takes over only once every open copy of the app
+    // is closed. (The very first install has nothing to wait for.)
   })());
 });
 
