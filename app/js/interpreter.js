@@ -120,7 +120,7 @@ export function friendlyError(err) {
 
 export function friendlyTranslationError(err) {
   const msg = err?.message || '';
-  if (/quota/i.test(msg)) return 'Today’s free translation limit has been reached. It resets tomorrow — or choose another translation option in Settings.';
+  if (/quota/i.test(msg)) return 'Today’s free translation limit has been reached. It resets tomorrow. On a computer, Google Chrome can translate without this limit.';
   if (/fetch|network|offline/i.test(msg) || globalThis.navigator?.onLine === false) {
     return 'Couldn’t reach the translation service. Check your internet connection.';
   }

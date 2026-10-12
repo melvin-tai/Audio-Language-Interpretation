@@ -4,10 +4,15 @@
  * Priority: URL query (shareable links, e.g. ?from=ja&to=en&asr=whisper)
  *           > saved in this browser (localStorage) > defaults in config.js.
  * Invalid values are ignored rather than trusted.
+ *
+ * Only the two languages are remembered between visits. Engine choices are
+ * automatic; the URL parameters asr/model/mt are an advanced override that
+ * applies to that visit only (there is no on-page settings panel to undo them).
  */
 import { DEFAULT_SETTINGS, LANGUAGES, WHISPER_MODELS } from './config.js';
 
 const STORAGE_KEY = 'live-interpreter:settings';
+const REMEMBERED = ['source', 'target'];
 const URL_KEYS = { from: 'source', to: 'target', asr: 'recognition', model: 'whisperModel', mt: 'translation' };
 
 const VALID = {
@@ -34,13 +39,15 @@ export function fromQuery(search) {
 
 export function loadSettings({ search = globalThis.location?.search ?? '', storage = safeStorage(), defaults = DEFAULT_SETTINGS } = {}) {
   let saved = {};
-  try { saved = sanitize(JSON.parse(storage?.getItem(STORAGE_KEY) || '{}')); } catch { /* corrupt or blocked */ }
+  try { saved = pick(sanitize(JSON.parse(storage?.getItem(STORAGE_KEY) || '{}')), REMEMBERED); } catch { /* corrupt or blocked */ }
   return { ...defaults, ...saved, ...fromQuery(search) };
 }
 
 export function saveSettings(settings, storage = safeStorage()) {
-  try { storage?.setItem(STORAGE_KEY, JSON.stringify(sanitize(settings))); } catch { /* private mode etc. */ }
+  try { storage?.setItem(STORAGE_KEY, JSON.stringify(pick(sanitize(settings), REMEMBERED))); } catch { /* private mode etc. */ }
 }
+
+const pick = (obj, keys) => Object.fromEntries(keys.filter((k) => k in obj).map((k) => [k, obj[k]]));
 
 function safeStorage() {
   try { return globalThis.localStorage ?? null; } catch { return null; }

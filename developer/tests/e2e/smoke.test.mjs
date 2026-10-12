@@ -53,7 +53,7 @@ const MOCK_WORKER = `
     if (op === 'transcribe') {
       n++;
       const secs = (data.audio.length / 16000).toFixed(1);
-      return self.postMessage({ id, result: 'segment ' + n + ' lang=' + data.language + ' secs=' + secs });
+      return self.postMessage({ id, result: 'segment ' + n + ' lang=' + data.language + ' model=' + data.model.split('/').pop() + ' secs=' + secs });
     }
     self.postMessage({ id, error: 'unexpected op ' + op });
   };`;
@@ -136,7 +136,7 @@ test('desktop: record → segment → transcribe → translate', { timeout: 60_0
   const cards = await readCards(page);
   console.log(cards);
   assert.ok(cards.length >= 2);
-  assert.match(cards[0].original, /^segment 1 lang=en secs=\d+\.\d$/);
+  assert.match(cards[0].original, /^segment 1 lang=en model=whisper-base secs=\d+\.\d$/);
   // Phrase 1 is 1.6 s of sound; with pre-roll/tail the segment should be ~1.6–2.3 s.
   const secs = Number(cards[0].original.split('secs=')[1]);
   assert.ok(secs > 1.4 && secs < 2.4, `segment length ${secs}s`);
@@ -151,14 +151,20 @@ test('desktop: record → segment → transcribe → translate', { timeout: 60_0
   assert.deepEqual(problems, []);
 });
 
-test('phone: fits the screen, defaults to the small model, records', { timeout: 60_000 }, async (t) => {
+test('phone: fits the screen, simple layout, defaults to the small model, records', { timeout: 60_000 }, async (t) => {
   const { browser, base } = await launch(t, wav);
   const { page, problems } = await preparePage(browser);
   await page.setUserAgent('Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0 Mobile Safari/537.36');
   await page.setViewport({ width: 360, height: 740, isMobile: true, hasTouch: true, deviceScaleFactor: 2 });
   await page.goto(`${base}/?from=ja&to=en&asr=whisper&mt=mymemory`, { waitUntil: 'networkidle0' });
 
-  assert.equal(await page.$eval('#whisperModel', (s) => s.value), 'tiny');
+  // No technical settings on the page — just languages, the button and results.
+  assert.equal(await page.$$eval('select', (s) => s.length), 2, 'only the two language pickers');
+  assert.equal(await page.$('details'), null, 'no settings panel');
+  // The SABA asri logo is shown and actually loaded (not a broken image).
+  const logo = await page.$eval('.hero .logo', (img) => ({ alt: img.alt, w: img.naturalWidth, shown: img.getBoundingClientRect().width }));
+  assert.equal(logo.alt, 'SABA asri Turtles Conservation');
+  assert.ok(logo.w > 0 && logo.shown >= 200, `logo loaded and visible (${JSON.stringify(logo)})`);
   assert.equal(await page.$eval('#record-label', (e) => e.textContent), 'Tap to start');
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
   assert.ok(overflow <= 0, `page scrolls sideways by ${overflow}px`);
@@ -169,7 +175,7 @@ test('phone: fits the screen, defaults to the small model, records', { timeout: 
   await page.waitForFunction(() => document.querySelectorAll('#phrases .translated:not(.pending)').length >= 1, { timeout: 30_000 });
   await page.tap('#record');
   const cards = await readCards(page);
-  assert.match(cards[0].original, /lang=ja/);
+  assert.match(cards[0].original, /lang=ja model=whisper-tiny /, 'phones use the Quick (tiny) model');
   assert.equal(cards[0].lang, 'en');
   assert.deepEqual(problems, []);
 });
@@ -182,4 +188,5 @@ test('opening the file directly shows a friendly explanation', { timeout: 30_000
   await page.goto(indexPath, { waitUntil: 'domcontentloaded' });
   assert.equal(await page.$eval('#file-warning', (e) => e.hidden), false);
   assert.equal(await page.$eval('#app', (e) => e.hidden), true);
+  assert.equal(await page.$eval('#file-warning a', (a) => a.href), 'https://melvin-tai.github.io/Audio-Language-Interpretation/');
 });

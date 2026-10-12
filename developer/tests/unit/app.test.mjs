@@ -33,6 +33,17 @@ test('settings: defaults, saved values, then URL overrides — invalid values ig
   assert.ok(Object.keys(WHISPER_MODELS).includes(DEFAULT_SETTINGS.whisperModel));
 });
 
+test('settings: only the two languages are remembered between visits', () => {
+  const storage = memoryStorage();
+  saveSettings({ ...DEFAULT_SETTINGS, source: 'zh', target: 'id', recognition: 'whisper', translation: 'nllb' }, storage);
+  assert.deepEqual(JSON.parse(storage.getItem('live-interpreter:settings')), { source: 'zh', target: 'id' });
+  // Engine choices saved by an older version of the page are ignored too.
+  storage.setItem('live-interpreter:settings', JSON.stringify({ source: 'fr', recognition: 'whisper', translation: 'nllb' }));
+  assert.deepEqual(loadSettings({ search: '', storage }), { ...DEFAULT_SETTINGS, source: 'fr' });
+  // …but a URL can still choose engines for that visit (advanced use).
+  assert.equal(loadSettings({ search: '?asr=whisper', storage }).recognition, 'whisper');
+});
+
 test('settings: corrupt or unavailable storage falls back to defaults', () => {
   const bad = { getItem: () => '{not json', setItem: () => { throw new Error('quota'); } };
   assert.deepEqual(loadSettings({ search: '', storage: bad }), { ...DEFAULT_SETTINGS });

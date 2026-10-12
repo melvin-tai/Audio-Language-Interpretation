@@ -2,12 +2,11 @@
  * main.js — page entry point. Builds the controls, implements the "view" the
  * Interpreter reports to, and wires up the buttons. Only page/DOM code lives here.
  */
-import { LANGUAGES, WHISPER_MODELS, DEFAULT_SETTINGS } from './config.js';
+import { LANGUAGES, DEFAULT_SETTINGS } from './config.js';
 import { loadSettings, saveSettings } from './settings.js';
 import { Interpreter } from './interpreter.js';
 import { TranslationRouter } from './translation/index.js';
 import { isWebSpeechSupported } from './recognition/index.js';
-import { isChromeTranslatorSupported } from './translation/chrome-builtin.js';
 import { onModelProgress, describeProgress } from './workers/ml-client.js';
 import { isPhoneOrTablet, createWakeLock } from './device.js';
 
@@ -17,10 +16,8 @@ const el = {
   record: $('record'), recordText: $('record-text'), recordLabel: $('record-label'),
   status: $('status'), live: $('live'), phrases: $('phrases'), empty: $('empty'),
   toolbar: $('toolbar'), copy: $('copy'), clear: $('clear'),
-  recognition: $('recognition'), whisperModel: $('whisperModel'), translationEngine: $('translation-engine'),
-  support: $('device-support'),
 };
-const lockedWhileRecording = [el.source, el.target, el.swap, el.recognition, el.whisperModel, el.translationEngine];
+const lockedWhileRecording = [el.source, el.target, el.swap];
 
 const phone = isPhoneOrTablet();
 const tapWord = phone ? 'Tap' : 'Click';
@@ -33,26 +30,14 @@ for (const l of LANGUAGES) {
   el.source.append(option(l.id, text));
   el.target.append(option(l.id, text));
 }
-for (const [key, m] of Object.entries(WHISPER_MODELS)) el.whisperModel.append(option(key, m.label));
 
-function applySettings(s) {
-  el.source.value = s.source;
-  el.target.value = s.target;
-  el.recognition.value = s.recognition;
-  el.whisperModel.value = s.whisperModel;
-  el.translationEngine.value = s.translation;
-}
-function readSettings() {
-  return {
-    source: el.source.value,
-    target: el.target.value,
-    recognition: el.recognition.value,
-    whisperModel: el.whisperModel.value,
-    translation: el.translationEngine.value,
-  };
-}
+// Everything except the two languages is chosen automatically. (Advanced users
+// can still override engines with URL parameters — see developer/README.md.)
 // Phones get the smallest on-device model by default (less data, less memory).
-applySettings(loadSettings({ defaults: phone ? { ...DEFAULT_SETTINGS, whisperModel: 'tiny' } : DEFAULT_SETTINGS }));
+const settings = loadSettings({ defaults: phone ? { ...DEFAULT_SETTINGS, whisperModel: 'tiny' } : DEFAULT_SETTINGS });
+el.source.value = settings.source;
+el.target.value = settings.target;
+const readSettings = () => ({ ...settings, source: el.source.value, target: el.target.value });
 for (const c of lockedWhileRecording) c.addEventListener('change', () => saveSettings(readSettings()));
 
 // ---------- the view the Interpreter talks to ----------
@@ -139,19 +124,11 @@ el.copy.addEventListener('click', async () => {
   }
 });
 
-// ---------- what works on this device (shown in Settings) ----------
-const yes = (ok, good, bad) => `${ok ? '✓' : '–'} ${ok ? good : bad}`;
-el.support.replaceChildren(...[
-  yes(isWebSpeechSupported(), 'Fast built-in speech recognition', 'No built-in speech recognition (on-device mode will be used)'),
-  yes(isChromeTranslatorSupported(), 'Private built-in translator', 'No built-in translator (MyMemory online will be used)'),
-  yes(typeof WebAssembly === 'object', 'On-device mode supported', 'On-device mode not supported'),
-].map((t) => Object.assign(document.createElement('li'), { textContent: t })));
-
 el.recordLabel.textContent = `${tapWord} to start`;
 
 const canListen = isWebSpeechSupported() || !!navigator.mediaDevices?.getUserMedia;
 if (!window.isSecureContext) {
-  view.setStatus('The microphone only works on secure (https://) web pages. Open this site using its https:// link.', 'error');
+  view.setStatus('The microphone only works on secure web pages. Please open https://melvin-tai.github.io/Audio-Language-Interpretation/', 'error');
 } else if (!canListen) {
   view.setStatus('This browser can’t use the microphone. Please try Chrome, Safari, Edge or Firefox.', 'error');
 }
