@@ -62,6 +62,8 @@ The site is served by **GitHub Pages → Deploy from a branch → `main` / `(roo
 3. Click **Commit changes**.
 4. To delete a file, open it on GitHub, click **⋯ → Delete file**, then **Commit changes**.
 
+**Version tag (cache-busting).** GitHub Pages lets browsers reuse files for up to 10 minutes. Without care, a visitor can get the new `index.html` with the *old* `styles.css` and see a broken page. So `index.html` loads `app/styles.css?v=…` and `app/js/main.js?v=…`. **Change that date in both places whenever you change the CSS or JavaScript** — browsers then fetch the new files immediately. (Modules imported by `main.js` aren't tagged; they refresh within 10 minutes.)
+
 Check **Settings → Pages** if the site doesn't update: the source must be *Deploy from a branch*, branch `main`, folder `/ (root)`.
 
 To host your **own copy**, fork the repository (or upload these files to a new public repository) and enable Pages the same way. Your link becomes `https://YOUR-USERNAME.github.io/REPO-NAME/`. Update the live-site URL in `index.html` (file notice, canonical/og tags, footer) and `app/js/main.js` (secure-context message) to match.

@@ -190,3 +190,38 @@ test('opening the file directly shows a friendly explanation', { timeout: 30_000
   assert.equal(await page.$eval('#app', (e) => e.hidden), true);
   assert.equal(await page.$eval('#file-warning a', (a) => a.href), 'https://melvin-tai.github.io/Audio-Language-Interpretation/');
 });
+
+test('layout: even spacing and a reachable button on every screen size', { timeout: 60_000 }, async (t) => {
+  const server = await startServer(0);
+  const browser = await puppeteer.launch({ headless: true, args: ['--no-sandbox'] });
+  t.after(async () => { await browser.close(); server.close(); });
+  const sizes = [[320, 568, true], [390, 844, true], [844, 390, true], [768, 1024, true], [1366, 768, false], [1920, 1080, false]];
+  for (const [width, height, isMobile] of sizes) {
+    const page = await browser.newPage();
+    await page.setViewport({ width, height, isMobile, hasTouch: isMobile });
+    await page.goto(`http://localhost:${server.address().port}/`, { waitUntil: 'networkidle0' });
+    const m = await page.evaluate(() => {
+      const r = (s) => document.querySelector(s).getBoundingClientRect();
+      const panel = r('.panel'), hero = r('.hero'), mic = r('#record'), logo = r('.logo');
+      const cs = getComputedStyle(document.querySelector('.panel'));
+      return {
+        overflowX: document.documentElement.scrollWidth - innerWidth,
+        gapL: panel.left, gapR: innerWidth - panel.right,
+        padTop: cs.paddingTop, padLeft: cs.paddingLeft,
+        overlap: hero.bottom - panel.top,
+        micBottom: mic.bottom, logoW: logo.width,
+        heroBg: getComputedStyle(document.querySelector('.hero')).backgroundColor,
+      };
+    });
+    const at = `${width}×${height}`;
+    assert.ok(m.overflowX <= 0, `${at}: page scrolls sideways`);
+    assert.ok(Math.abs(m.gapL - m.gapR) <= 1, `${at}: panel is off-centre (${m.gapL} vs ${m.gapR})`);
+    assert.ok(m.gapL >= 16, `${at}: side margin too small (${m.gapL})`);
+    assert.equal(m.padTop, m.padLeft, `${at}: uneven panel padding`);
+    assert.ok(m.overlap > 20, `${at}: panel should ride over the header wave`);
+    assert.ok(m.micBottom <= height, `${at}: microphone button is below the screen (${m.micBottom}px)`);
+    assert.ok(m.logoW >= 120, `${at}: logo too small (${m.logoW}px)`);
+    assert.equal(m.heroBg, 'rgb(8, 50, 61)', `${at}: header must be deep-sea so the white logo shows`);
+    await page.close();
+  }
+});
