@@ -19,6 +19,10 @@ import { getLanguage } from './config.js';
 import { createRecognitionEngine } from './recognition/index.js';
 
 export class Interpreter {
+  /**
+   * device: object or function returning { phone, speechOnDevice, online } —
+   * read fresh at every start, because the connection and downloads change.
+   */
   constructor({ view, router, createEngine = createRecognitionEngine, device = {} }) {
     Object.assign(this, { view, router, createEngine, device });
     this.state = 'idle'; // 'idle' | 'running' | 'stopping'
@@ -38,7 +42,7 @@ export class Interpreter {
     this.view.setRecording(true);
     this.view.setStatus('Starting…');
     try {
-      await this._startEngine(this.createEngine(settings.recognition, settings.whisperModel, this.device));
+      await this._startEngine(this.createEngine(settings.recognition, settings.whisperModel, this._context()));
     } catch (err) {
       await this._abort(friendlyError(err));
     }
@@ -54,6 +58,10 @@ export class Interpreter {
     this.view.setLive('');
     this.view.setRecording(false);
     this.view.setStatus('Stopped.');
+  }
+
+  _context() {
+    return typeof this.device === 'function' ? this.device() : this.device;
   }
 
   async _startEngine(engine) {
@@ -73,7 +81,7 @@ export class Interpreter {
     if (this.settings.recognition === 'auto' && this.engine?.id === 'webspeech' && !/blocked|microphone/i.test(err.message)) {
       this.view.setStatus('Built-in speech recognition isn’t working here, so we switched to on-device recognition. The first time, this needs a one-time download.', 'warn');
       try {
-        await this._startEngine(this.createEngine('whisper', this.settings.whisperModel, this.device));
+        await this._startEngine(this.createEngine('whisper', this.settings.whisperModel, this._context()));
         return;
       } catch (err2) {
         err = err2;
@@ -115,11 +123,20 @@ export function friendlyError(err) {
   }
   if (name === 'NotFoundError') return 'No microphone was found. Connect one and try again.';
   if (name === 'NotReadableError') return 'The microphone is being used by another app. Close it and try again.';
+  if (isOffline() && /fetch|network|load|download/i.test(err?.message || '')) {
+    return 'There’s no internet, and speech recognition isn’t downloaded on this device yet. When you’re next online, tap “Download for offline use”.';
+  }
   return err?.message || String(err);
 }
 
+const isOffline = () => globalThis.navigator?.onLine === false;
+
 export function friendlyTranslationError(err) {
   const msg = err?.message || '';
+  if (err?.code === 'offline-not-ready') {
+    return 'No internet, and this language pair isn’t downloaded yet. When you’re next online, tap “Download for offline use”.';
+  }
+  if (/too long|slow connection/i.test(msg)) return 'The connection is too slow for online translation. Download this language pair to translate without internet.';
   if (/quota/i.test(msg)) return 'Today’s free translation limit has been reached. It resets tomorrow. On a computer, Google Chrome can translate without this limit.';
   if (/fetch|network|offline/i.test(msg) || globalThis.navigator?.onLine === false) {
     return 'Couldn’t reach the translation service. Check your internet connection.';
