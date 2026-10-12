@@ -20,7 +20,7 @@ const VALID = {
   target: (v) => LANGUAGES.some((l) => l.id === v),
   recognition: (v) => ['auto', 'webspeech', 'whisper'].includes(v),
   whisperModel: (v) => Object.hasOwn(WHISPER_MODELS, v),
-  translation: (v) => ['auto', 'chrome', 'mymemory', 'nllb'].includes(v),
+  translation: (v) => ['auto', 'chrome', 'on-device', 'mymemory'].includes(v),
 };
 
 /** Keep only known keys with valid values. */

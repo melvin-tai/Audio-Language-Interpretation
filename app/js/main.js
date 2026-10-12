@@ -2,13 +2,14 @@
  * main.js — page entry point. Builds the controls, implements the "view" the
  * Interpreter reports to, and wires up the buttons. Only page/DOM code lives here.
  */
-import { LANGUAGES, DEFAULT_SETTINGS } from './config.js';
+import { LANGUAGES, DEFAULT_SETTINGS, getLanguage } from './config.js';
 import { loadSettings, saveSettings } from './settings.js';
 import { Interpreter } from './interpreter.js';
 import { TranslationRouter } from './translation/index.js';
 import { isWebSpeechSupported } from './recognition/index.js';
 import { onModelProgress, describeProgress } from './workers/ml-client.js';
 import { isPhoneOrTablet, createWakeLock } from './device.js';
+import { offlinePacks } from './offline/packs.js';
 
 const $ = (id) => document.getElementById(id);
 const el = {
@@ -16,6 +17,7 @@ const el = {
   record: $('record'), recordText: $('record-text'), recordLabel: $('record-label'),
   status: $('status'), live: $('live'), phrases: $('phrases'), empty: $('empty'),
   toolbar: $('toolbar'), copy: $('copy'), clear: $('clear'),
+  offline: $('offline'), offlineText: $('offline-text'), download: $('download'), bar: $('download-bar'),
 };
 const lockedWhileRecording = [el.source, el.target, el.swap];
 
@@ -55,6 +57,7 @@ const view = {
     el.recordText.textContent = on ? 'Stop listening' : 'Start listening';
     el.recordLabel.textContent = `${tapWord} to ${on ? 'stop' : 'start'}`;
     for (const c of lockedWhileRecording) c.disabled = on; // languages are fixed while listening
+    el.download.disabled = on || downloading;
     on ? wakeLock.on() : wakeLock.off();
   },
   addPhrase(text) {
@@ -82,7 +85,10 @@ const view = {
 };
 
 const router = new TranslationRouter({ onStatus: (m) => view.setStatus(m) });
-const interpreter = new Interpreter({ view, router, device: { phone } });
+const isOnline = () => navigator.onLine !== false;
+// Read fresh at every start: downloads and the connection change over time.
+const deviceContext = () => ({ phone, online: isOnline(), speechOnDevice: offlinePacks.isSpeechReady(settings.whisperModel) });
+const interpreter = new Interpreter({ view, router, device: deviceContext });
 onModelProgress((p) => {
   if (!interpreter.isRunning) return;
   const msg = describeProgress(p);
@@ -104,6 +110,84 @@ el.swap.addEventListener('click', () => {
   [el.source.value, el.target.value] = [el.target.value, el.source.value];
   saveSettings(readSettings());
 });
+
+// ---------- offline use ----------
+// One button downloads everything a language pair needs (speech + translation,
+// both directions). After that, the pair works with no internet at all.
+let downloading = false;
+let offlineCheck = 0; // ignore results from an older check
+
+function pairName() {
+  const a = getLanguage(el.source.value).name;
+  const b = getLanguage(el.target.value).name;
+  return a === b ? a : `${a} ↔ ${b}`;
+}
+
+function showOffline(state, text, button = '') {
+  el.offline.dataset.state = state;
+  el.offlineText.textContent = text;
+  el.download.hidden = !button;
+  el.download.textContent = button;
+  el.download.disabled = downloading || interpreter.isRunning;
+}
+
+async function updateOffline() {
+  router.invalidate(); // downloads or the connection may have changed what's usable
+  if (downloading) return;
+  const check = ++offlineCheck;
+  const { ready, missingMb } = await offlinePacks.status(el.source.value, el.target.value, settings.whisperModel);
+  if (check !== offlineCheck || downloading) return;
+  if (ready) {
+    showOffline('ready', `✓ ${pairName()} works without internet on this device.`);
+  } else if (isOnline()) {
+    showOffline('missing', `Poor connection? Download once and ${pairName()} works without internet.`, `Download for offline use · ${missingMb} MB`);
+  } else {
+    showOffline('offline', `You’re offline, and ${pairName()} isn’t downloaded on this device yet. Connect once to download it.`);
+  }
+}
+
+function setBar(fraction) {
+  const pct = Math.round(fraction * 100);
+  el.bar.hidden = false;
+  el.bar.firstElementChild.style.width = `${pct}%`;
+  el.bar.setAttribute('aria-valuenow', String(pct));
+  return pct;
+}
+
+el.download.addEventListener('click', async () => {
+  downloading = true;
+  for (const c of lockedWhileRecording) c.disabled = true; // keep the pair fixed while it downloads
+  showOffline('downloading', `Downloading… 0% — keep this page open.`);
+  setBar(0);
+  try {
+    await offlinePacks.download(el.source.value, el.target.value, settings.whisperModel, {
+      onProgress: (f) => { el.offlineText.textContent = `Downloading… ${setBar(f)}% — keep this page open.`; },
+    });
+    downloading = false;
+    el.bar.hidden = true;
+    await updateOffline();
+  } catch (err) {
+    console.warn('Offline download failed:', err);
+    downloading = false;
+    el.bar.hidden = true;
+    const { missingMb } = await offlinePacks.status(el.source.value, el.target.value, settings.whisperModel);
+    showOffline('missing', 'The download stopped — the connection may have dropped. Parts already downloaded are kept.', `Continue download · ${missingMb} MB`);
+  } finally {
+    downloading = false;
+    if (!interpreter.isRunning) for (const c of lockedWhileRecording) c.disabled = false;
+  }
+});
+
+for (const c of [el.source, el.target]) c.addEventListener('change', updateOffline);
+el.swap.addEventListener('click', updateOffline);
+window.addEventListener('online', updateOffline);
+window.addEventListener('offline', updateOffline);
+updateOffline();
+
+// Keep the app itself on the device so it opens without internet.
+if ('serviceWorker' in navigator && window.isSecureContext && location.protocol !== 'file:') {
+  navigator.serviceWorker.register('sw.js').catch((err) => console.warn('Offline app storage unavailable:', err));
+}
 
 el.clear.addEventListener('click', () => {
   el.phrases.replaceChildren();

@@ -110,15 +110,20 @@ test('router: permanent failures are remembered per pair and skipped next time',
   assert.equal(chrome.calls, 2, 'but still tried for a different pair');
 });
 
-test('router: unsupported engines are skipped; auto never uses nllb', async () => {
+test('router: unsupported engines are skipped; an explicit choice uses only that engine', async () => {
   const chrome = fakeEngine('chrome', () => 'C', false);
   const mm = fakeEngine('mymemory', () => 'M');
-  const nllb = fakeEngine('nllb', () => 'N');
-  const r = new TranslationRouter({ engines: [chrome, mm, nllb] });
+  const r = new TranslationRouter({ engines: [chrome, mm] });
   assert.equal((await r.translate('x', en, ja)).engine, 'mymemory');
-  assert.equal((await r.translate('x', en, ja, 'nllb')).engine, 'nllb');
+  assert.equal((await r.translate('x', en, ja, 'mymemory')).engine, 'mymemory');
+  await assert.rejects(r.translate('x', en, ja, 'chrome'), /No translation engine/);
   r.prepare('auto', en, ja);
-  assert.equal(chrome.prepared + mm.prepared + nllb.prepared, 1, 'only supported auto engines are prepared');
+  assert.equal(chrome.prepared + mm.prepared, 1, 'only supported auto engines are prepared');
+});
+
+test('only commercially usable translation engines are shipped', async () => {
+  const { TRANSLATION_ENGINES } = await import('../../../app/js/translation/index.js');
+  assert.deepEqual(TRANSLATION_ENGINES.map((e) => e.id), ['chrome', 'on-device', 'mymemory'], 'NLLB-200 is CC-BY-NC (non-commercial) and must not return');
 });
 
 test('router: reports all errors when every engine fails', async () => {
